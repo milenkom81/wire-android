@@ -37,7 +37,7 @@ import java.text.SimpleDateFormat;
 import java.util.Locale;
 
 public class AssetIntentsManager {
-    private static final String SAVED_STATE_PENDING_URI = "SAVED_STATE_PENDING_URI";
+    public static final String SAVED_STATE_PENDING_URI = "SAVED_STATE_PENDING_URI";
 
     private static final String INTENT_GALLERY_TYPE = "image/*";
     private final PackageManager pm;
@@ -59,6 +59,12 @@ public class AssetIntentsManager {
                 pendingFileUri = new AndroidURI(uri);
             }
         }
+        pm = activity.getPackageManager();
+    }
+
+    public AssetIntentsManager(Activity activity, Callback callback, URI pendingFileUri) {
+        setCallback(callback);
+        this.pendingFileUri = pendingFileUri;
         pm = activity.getPackageManager();
     }
 

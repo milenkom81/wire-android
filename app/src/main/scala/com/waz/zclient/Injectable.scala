@@ -19,8 +19,7 @@ package com.waz.zclient
 
 
 trait Injectable {
-  def inject[T: reflect.Manifest](implicit inj: Injector) =
-    inj.binding[T].getOrElse(throw new Exception(s"No binding for: ${implicitly[reflect.Manifest[T]].runtimeClass.getName} in $inj")).apply()
+  def inject[T: reflect.Manifest](implicit inj: Injector) = inj.bindingOrError[T]
 }
 
 case class Provider[T](fn: () => T) extends (() => T) {
@@ -32,6 +31,9 @@ case class Singleton[T](fn: () => T) extends (() => T) {
 }
 
 trait Injector { self =>
+
+  def bindingOrError[T: reflect.Manifest] =
+    binding[T].getOrElse(throw new Exception(s"No binding for: ${implicitly[reflect.Manifest[T]].runtimeClass.getName} in $this")).apply()
 
   def binding[T: reflect.Manifest]: Option[() => T]
 

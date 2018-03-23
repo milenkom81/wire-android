@@ -70,7 +70,7 @@ import com.waz.zclient.pages.main.pickuser.controller.IPickUserController
 import com.waz.zclient.participants.ParticipantsController
 import com.waz.zclient.preferences.PreferencesController
 import com.waz.zclient.tracking.{CrashController, GlobalTrackingController, UiTrackingController}
-import com.waz.zclient.utils.{BackStackNavigator, BackendPicker, Callback, UiStorage}
+import com.waz.zclient.utils.{BackStackNavigator, BackendPicker, Callback, LocalAssetCache, UiStorage}
 import com.waz.zclient.views.DraftMap
 import net.hockeyapp.android.Constants
 
@@ -195,6 +195,7 @@ object WireApplication {
     bind [CollectionController]      to new CollectionController()
     bind [UiStorage]                 to new UiStorage()
     bind [BackStackNavigator]        to new BackStackNavigator()
+    bind [LocalAssetCache]           to LocalAssetCache(ctx)
 
     bind [CursorController]             to new CursorController()
     bind [ConversationListController]   to new ConversationListController()

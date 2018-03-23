@@ -63,8 +63,9 @@ import com.waz.zclient.pages.BaseFragment
 import com.waz.zclient.pages.extendedcursor.ExtendedCursorContainer
 import com.waz.zclient.pages.extendedcursor.emoji.EmojiKeyboardLayout
 import com.waz.zclient.pages.extendedcursor.ephemeral.EphemeralLayout
-import com.waz.zclient.pages.extendedcursor.image.{CursorImagesLayout, ImagePreviewLayout}
+import com.waz.zclient.pages.extendedcursor.image.CursorImagesLayout
 import com.waz.zclient.pages.extendedcursor.voicefilter.VoiceFilterLayout
+import com.waz.zclient.pages.main.{ImagePreviewCallback, ImagePreviewLayout}
 import com.waz.zclient.pages.main.conversation.{AssetIntentsManager, MessageStreamAnimation}
 import com.waz.zclient.pages.main.conversationlist.ConversationListAnimation
 import com.waz.zclient.pages.main.conversationpager.controller.SlidingPaneObserver
@@ -417,7 +418,7 @@ class ConversationFragment extends BaseFragment[ConversationFragment.Container] 
   override def onActivityResult(requestCode: Int, resultCode: Int, data: Intent): Unit =
     assetIntentsManager.foreach { _.onActivityResult(requestCode, resultCode, data) }
 
-  private lazy val imagePreviewCallback = new ImagePreviewLayout.Callback {
+  private lazy val imagePreviewCallback = new ImagePreviewCallback {
     override def onCancelPreview(): Unit = {
       previewShown ! false
       getControllerFactory.getNavigationController.setPagerEnabled(true)
@@ -516,7 +517,7 @@ class ConversationFragment extends BaseFragment[ConversationFragment.Container] 
             )
         }
       case AssetIntentsManager.IntentType.GALLERY =>
-        showImagePreview(ImageAssetFactory.getImageAsset(uri), ImagePreviewLayout.Source.DEVICE_GALLERY)
+        showImagePreview { _.setImage(uri, ImagePreviewLayout.Source.DeviceGallery) }
       case AssetIntentsManager.IntentType.VIDEO =>
         sendVideo(uri)
       case AssetIntentsManager.IntentType.CAMERA =>
@@ -606,14 +607,15 @@ class ConversationFragment extends BaseFragment[ConversationFragment.Container] 
 
     override def openVideo(): Unit = captureVideoAskPermissions()
 
-    override def onGalleryPictureSelected(asset: ImageAsset): Unit = {
+    override def onGalleryPictureSelected(uri: URI): Unit = {
       previewShown ! true
-      showImagePreview(asset, ImagePreviewLayout.Source.IN_APP_GALLERY)
+      showImagePreview { _.setImage(uri, ImagePreviewLayout.Source.InAppGallery) }
     }
 
     override def openGallery(): Unit = assetIntentsManager.foreach { _.openGallery() }
 
-    override def onPictureTaken(imageAsset: ImageAsset): Unit = showImagePreview(imageAsset, ImagePreviewLayout.Source.CAMERA)
+    override def onPictureTaken(imageData: Array[Byte], isMirrored: Boolean): Unit =
+      showImagePreview { _.setImage(imageData, isMirrored) }
   }
 
   private def captureVideoAskPermissions() = for {
@@ -827,16 +829,10 @@ class ConversationFragment extends BaseFragment[ConversationFragment.Container] 
     override def onPanelClosed(panel: View): Unit = {}
   }
 
-  private def showImagePreview(asset: ImageAsset, source: ImagePreviewLayout.Source): Unit = {
-    val imagePreviewLayout = LayoutInflater.from(getContext).inflate(R.layout.fragment_cursor_images_preview, containerPreview, false).asInstanceOf[ImagePreviewLayout]
-    imagePreviewLayout.setImageAsset(asset, source, imagePreviewCallback)
-    imagePreviewLayout.setAccentColor(getControllerFactory.getAccentColorController.getAccentColor.getColor)
-    convController.currentConv.head.map { conv => imagePreviewLayout.setTitle(conv.displayName) }
+  private def showImagePreview(setImage: (ImagePreviewLayout) => Any): Unit = {
+    val imagePreviewLayout = ImagePreviewLayout.newInstance(getContext, containerPreview, imagePreviewCallback)
+    setImage(imagePreviewLayout)
     containerPreview.addView(imagePreviewLayout)
-    openPreview(containerPreview)
-  }
-
-  private def openPreview(containerPreview: View): Unit = {
     previewShown ! true
     getControllerFactory.getNavigationController.setPagerEnabled(false)
     containerPreview.setTranslationY(getView.getMeasuredHeight)

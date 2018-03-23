@@ -24,6 +24,7 @@ import android.graphics.drawable.Drawable
 import com.waz.ZLog.ImplicitTag._
 import com.waz.content.UserPreferences
 import com.waz.model.AssetData.{IsImage, IsVideo}
+import com.waz.model.AssetMetaData.Image.Tag.Medium
 import com.waz.model._
 import com.waz.service.ZMessaging
 import com.waz.service.assets.AssetService.BitmapResult
@@ -36,18 +37,17 @@ import com.waz.utils.returning
 import com.waz.utils.wrappers.URI
 import com.waz.zclient.common.views.ImageAssetDrawable.{RequestBuilder, ScaleType, State}
 import com.waz.zclient.common.views.ImageController._
-import com.waz.zclient.utils.Offset
+import com.waz.zclient.utils.{LocalAssetCache, Offset}
 import com.waz.zclient.{Injectable, Injector}
 
 //TODO could merge with logic from the ChatheadView to make a very general drawable for our app
-class ImageAssetDrawable(
-                          src: Signal[ImageSource],
-                          scaleType: ScaleType = ScaleType.FitXY,
-                          request: RequestBuilder = RequestBuilder.Regular,
-                          background: Option[Drawable] = None,
-                          animate: Boolean = true,
-                          forceDownload: Boolean = true
-                        )(implicit inj: Injector, eventContext: EventContext) extends Drawable with Injectable {
+class ImageAssetDrawable(src: Signal[ImageSource],
+                         scaleType: ScaleType = ScaleType.FitXY,
+                         request: RequestBuilder = RequestBuilder.Regular,
+                         background: Option[Drawable] = None,
+                         animate: Boolean = true,
+                         forceDownload: Boolean = true)
+                        (implicit inj: Injector, eventContext: EventContext) extends Drawable with Injectable {
 
   val images = inject[ImageController]
 
@@ -73,10 +73,10 @@ class ImageAssetDrawable(
   })
 
   val state = for {
-    im <- src
-    d <- dims if d.width > 0
-    _ <- fixedBounds
-    p <- padding
+    im    <- src
+    d     <- dims if d.width > 0
+    _     <- fixedBounds
+    p     <- padding
     state <- bitmapState(im, d.width - p.l - p.r)
   } yield state
 
@@ -144,9 +144,8 @@ class ImageAssetDrawable(
     }
   }
 
-  protected def drawBitmap(canvas: Canvas, bm: Bitmap, matrix: Matrix, bitmapPaint: Paint): Unit ={
+  protected def drawBitmap(canvas: Canvas, bm: Bitmap, matrix: Matrix, bitmapPaint: Paint): Unit =
     canvas.drawBitmap(bm, matrix, bitmapPaint)
-  }
 
   override def onBoundsChange(bounds: Rect): Unit = {
     dims ! Dim2(bounds.width(), bounds.height())
@@ -218,8 +217,10 @@ object ImageAssetDrawable {
   }
 
   type RequestBuilder = Int => BitmapRequest
+
   object RequestBuilder {
     val Regular: RequestBuilder = BitmapRequest.Regular(_)
+    val RegularMirrored: RequestBuilder = BitmapRequest.Regular(_, mirror = true)
     val Single: RequestBuilder = BitmapRequest.Single(_)
     val Round: RequestBuilder = BitmapRequest.Round(_)
     val Blurred: RequestBuilder = BitmapRequest.Blurred(_)
@@ -229,11 +230,26 @@ object ImageAssetDrawable {
     val src: ImageSource
     val bmp: Option[Bitmap] = None
   }
+
   object State {
     case class Loading(src: ImageSource) extends State
     case class Loaded(src: ImageSource, override val bmp: Option[Bitmap], etag: Int = 0) extends State
     case class Failed(src: ImageSource, ex: Option[Throwable] = None) extends State
   }
+
+  def apply(uri: URI, scaleType: ScaleType = ScaleType.CenterCrop)(implicit inj: Injector, eventContext: EventContext): ImageAssetDrawable =
+    new ImageAssetDrawable(Signal.const(DataImage(inj.bindingOrError[LocalAssetCache].getOrCreateAsset(uri))), scaleType)
+
+  def apply(imageData: Array[Byte], isMirrored: Boolean)(implicit inj: Injector, eventContext: EventContext): ImageAssetDrawable = {
+    val asset = AssetData.newImageAsset(tag = Medium).copy(sizeInBytes = imageData.length, data = Some(imageData))
+    new ImageAssetDrawable(
+      Signal.const(DataImage(asset)),
+      scaleType = ScaleType.CenterCrop,
+      request = if (isMirrored) RequestBuilder.RegularMirrored else RequestBuilder.Regular
+    )
+  }
+
+  def apply(imageData: Array[Byte])(implicit inj: Injector, eventContext: EventContext): ImageAssetDrawable = apply(imageData, isMirrored = false)
 }
 
 class RoundedImageAssetDrawable (
@@ -270,34 +286,10 @@ class IntegrationAssetDrawable (
   private val StrokeWidth = 2f
   private val StrokeAlpha = 20
 
-  private lazy val whitePaint = returning(new Paint(Paint.ANTI_ALIAS_FLAG)){ _.setColor(Color.WHITE) }
-  private lazy val borderPaint = returning(new Paint(Paint.ANTI_ALIAS_FLAG)){ paint =>
-    paint.setStyle(Paint.Style.STROKE)
-    paint.setColor(Color.BLACK)
-    paint.setAlpha(StrokeAlpha)
-    paint.setStrokeWidth(StrokeWidth)
-  }
-
   val drawHelper = IntegrationSquareDrawHelper()
 
-  override protected def drawBitmap(canvas: Canvas, bm: Bitmap, matrix: Matrix, bitmapPaint: Paint): Unit = {/*
-    val tempBm = Bitmap.createBitmap(getBounds.width, getBounds.height, Bitmap.Config.ARGB_8888)
-    val tempCanvas = new Canvas(tempBm)
-
-    tempCanvas.drawBitmap(bm, matrix, null)
-
-    val shader = new BitmapShader(tempBm, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
-    val outerRect = new RectF(StrokeWidth, StrokeWidth, getBounds.width - StrokeWidth, getBounds.height - StrokeWidth)
-    val innerRect = new RectF(StrokeWidth * 2, StrokeWidth * 2, getBounds.width - StrokeWidth * 2, getBounds.height - StrokeWidth * 2)
-
-    val cornerRadius = getBounds.width * 0.2f
-
-    bitmapPaint.setShader(shader)
-    canvas.drawRoundRect(innerRect, cornerRadius, cornerRadius, whitePaint)
-    canvas.drawRoundRect(innerRect, cornerRadius, cornerRadius, bitmapPaint)
-    canvas.drawRoundRect(outerRect, cornerRadius, cornerRadius, borderPaint)*/
+  override protected def drawBitmap(canvas: Canvas, bm: Bitmap, matrix: Matrix, bitmapPaint: Paint): Unit =
     drawHelper.draw(canvas, bm, getBounds, matrix, bitmapPaint)
-  }
 }
 
 case class IntegrationSquareDrawHelper() {

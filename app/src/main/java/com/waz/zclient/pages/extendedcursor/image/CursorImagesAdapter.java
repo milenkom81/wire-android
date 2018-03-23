@@ -28,9 +28,8 @@ import android.support.v7.widget.RecyclerView;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import com.waz.api.ImageAsset;
 import com.waz.zclient.R;
-import com.waz.zclient.views.images.ImageAssetView;
+import com.waz.zclient.messages.parts.*;
 
 class CursorImagesAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
@@ -67,9 +66,9 @@ class CursorImagesAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
         }
 
         @Override
-        public void onPictureTaken(ImageAsset imageAsset) {
+        public void onPictureTaken(byte[] imageData, boolean isMirrored) {
             if (callback != null) {
-                callback.onPictureTaken(imageAsset);
+                callback.onPictureTaken(imageData, isMirrored);
             }
         }
     };
@@ -126,7 +125,8 @@ class CursorImagesAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
             cameraViewHolder.getLayout().setCallback(cameraCallback);
             return cameraViewHolder;
         } else {
-            return new GalleryItemViewHolder((ImageAssetView) inflater.inflate(R.layout.item_cursor_gallery, parent, false));
+            CursorGalleryItem item = (CursorGalleryItem)inflater.inflate(R.layout.item_cursor_gallery, parent, false);
+            return new GalleryItemViewHolder(item);
         }
     }
 
@@ -134,8 +134,10 @@ class CursorImagesAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> 
     public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
         if (getItemViewType(position) == VIEW_TYPE_GALLERY) {
             cursor.moveToPosition(cursor.getCount() - position);
-            ((GalleryItemViewHolder) holder).setPath(cursor.getString(cursor.getColumnIndex(MediaStore.Images.Media.DATA)));
-            ((GalleryItemViewHolder) holder).setCallback(callback);
+            ((GalleryItemViewHolder) holder).bind(
+                cursor.getString(cursor.getColumnIndex(MediaStore.Images.Media.DATA)),
+                callback
+            );
         }
     }
 

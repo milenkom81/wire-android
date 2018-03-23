@@ -53,6 +53,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="@color/framework__camera__preview_image_background_color"
+        android:visibility="gone"
         />
 
     <com.waz.zclient.pages.main.profile.camera.controls.CameraBottomControl
@@ -73,6 +74,7 @@
         android:textColor="@color/black"
         android:textSize="@dimen/loading_spinner__size"
         android:layout_gravity="center"
+        android:visibility="gone"
         />
 
     <com.waz.zclient.pages.main.profile.camera.CameraFocusView

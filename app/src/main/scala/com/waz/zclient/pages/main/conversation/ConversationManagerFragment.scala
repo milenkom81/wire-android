@@ -42,11 +42,12 @@ import com.waz.api._
 import com.waz.model.{MessageContent => _, _}
 import com.waz.service.tracking.GroupConversationEvent
 import com.waz.threading.Threading
+import com.waz.zclient.camera.CameraFragment
 import com.waz.zclient.collection.controllers.CollectionController
 import com.waz.zclient.collection.fragments.CollectionFragment
 import com.waz.zclient.common.controllers.ScreenController
 import com.waz.zclient.common.controllers.global.KeyboardController
-import com.waz.zclient.controllers.camera.ICameraController
+import com.waz.zclient.controllers.camera.{CameraActionObserver, ICameraController}
 import com.waz.zclient.controllers.collections.CollectionsObserver
 import com.waz.zclient.controllers.drawing.IDrawingController.DrawingDestination
 import com.waz.zclient.controllers.drawing.{DrawingObserver, IDrawingController}
@@ -58,7 +59,7 @@ import com.waz.zclient.core.stores.conversation.ConversationChangeRequester
 import com.waz.zclient.pages.main.connect.UserProfileContainer
 import com.waz.zclient.pages.main.conversation.controller.{ConversationScreenControllerObserver, IConversationScreenController}
 import com.waz.zclient.pages.main.drawing.DrawingFragment
-import com.waz.zclient.pages.main.profile.camera.{CameraContext, CameraFragment}
+import com.waz.zclient.pages.main.profile.camera.CameraContext
 import com.waz.zclient.participants.ParticipantsController
 import com.waz.zclient.participants.fragments.ParticipantFragment
 import com.waz.zclient.views.ConversationFragment
@@ -68,10 +69,10 @@ class ConversationManagerFragment extends FragmentHelper
   with ConversationScreenControllerObserver
   with DrawingObserver
   with DrawingFragment.Container
-  with CameraFragment.Container
   with LocationObserver
   with CollectionsObserver
-  with UserProfileContainer {
+  with UserProfileContainer
+  with CameraActionObserver {
 
   import Threading.Implicits.Ui
 
@@ -188,7 +189,7 @@ class ConversationManagerFragment extends FragmentHelper
 
   override def onActivityResult(requestCode: Int, resultCode: Int, data: Intent): Unit = {
     super.onActivityResult(requestCode, resultCode, data)
-    val fragment = getChildFragmentManager.findFragmentByTag(CameraFragment.TAG)
+    val fragment = getChildFragmentManager.findFragmentByTag(CameraFragment.Tag)
     if (fragment != null) fragment.onActivityResult(requestCode, resultCode, data)
   }
 
@@ -232,18 +233,17 @@ class ConversationManagerFragment extends FragmentHelper
     navigationController.setRightPage(Page.MESSAGE_STREAM, ConversationManagerFragment.Tag)
   }
 
-  override def onBitmapSelected(imageAsset: ImageAsset, imageFromCamera: Boolean, cameraContext: CameraContext): Unit = {
-    if (cameraContext ne CameraContext.MESSAGE) return
-    inject[ConversationController].sendMessage(imageAsset)
-    cameraController.closeCamera(CameraContext.MESSAGE)
+  override def onBitmapSelected(imageAsset: ImageAsset, cameraContext: CameraContext): Unit =
+    if (cameraContext == CameraContext.MESSAGE) {
+      inject[ConversationController].sendMessage(imageAsset)
+      cameraController.closeCamera(CameraContext.MESSAGE)
   }
 
-  override def onOpenCamera(cameraContext: CameraContext): Unit = {
+  override def onOpenCamera(cameraContext: CameraContext): Unit =
     if (cameraContext == CameraContext.MESSAGE) {
       navigationController.setRightPage(Page.CAMERA, ConversationManagerFragment.Tag)
-      showFragment(CameraFragment.newInstance(CameraContext.MESSAGE), CameraFragment.TAG)
+      showFragment(CameraFragment.newInstance(CameraContext.MESSAGE), CameraFragment.Tag)
     }
-  }
 
   override def onCloseCamera(cameraContext: CameraContext): Unit = {
     if (cameraContext == CameraContext.MESSAGE) {

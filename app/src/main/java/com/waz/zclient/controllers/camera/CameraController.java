@@ -30,11 +30,6 @@ public class CameraController implements ICameraController {
     private CameraContext cameraContext;
 
     @Override
-    public CameraContext getCameraContext() {
-        return cameraContext;
-    }
-
-    @Override
     public void addCameraActionObserver(CameraActionObserver cameraActionObserver) {
         cameraActionObservers.add(cameraActionObserver);
     }
@@ -60,9 +55,9 @@ public class CameraController implements ICameraController {
     }
 
     @Override
-    public void onBitmapSelected(ImageAsset imageAsset, boolean imageFromCamera, CameraContext cameraContext) {
+    public void onBitmapSelected(ImageAsset imageAsset, CameraContext cameraContext) {
         for (CameraActionObserver cameraActionObserver : cameraActionObservers) {
-            cameraActionObserver.onBitmapSelected(imageAsset, imageFromCamera, cameraContext);
+            cameraActionObserver.onBitmapSelected(imageAsset, cameraContext);
         }
     }
 

@@ -39,16 +39,18 @@ import com.waz.zclient.Intents._
 import com.waz.zclient.SpinnerController.{Hide, Show}
 import com.waz.zclient.common.controllers.global.AccentColorController
 import com.waz.zclient.common.views.AccountTabsView
-import com.waz.zclient.pages.main.profile.camera.{CameraContext, CameraFragment}
+import com.waz.zclient.pages.main.profile.camera.CameraContext
 import com.waz.zclient.preferences.pages.{DevicesBackStackKey, OptionsView, ProfileBackStackKey}
 import com.waz.zclient.utils.{BackStackNavigator, RingtoneUtils, ViewUtils}
 import com.waz.zclient.{ActivityHelper, BaseActivity, R}
 import com.waz.zclient.views.LoadingIndicatorView
 import com.waz.zclient._
+import com.waz.zclient.camera.CameraFragment
+import com.waz.zclient.controllers.camera.CameraActionObserver
 
 class PreferencesActivity extends BaseActivity
   with ActivityHelper
-  with CameraFragment.Container {
+  with CameraActionObserver {
 
   import PreferencesActivity._
 
@@ -170,39 +172,39 @@ class PreferencesActivity extends BaseActivity
 
 
   override def onBackPressed() = {
-    Option(getSupportFragmentManager.findFragmentByTag(CameraFragment.TAG).asInstanceOf[CameraFragment]).fold{
+    Option(getSupportFragmentManager.findFragmentByTag(CameraFragment.Tag).asInstanceOf[CameraFragment]).fold{
       if (!spinnerController.spinnerShowing.currentValue.exists(_.isInstanceOf[Show]) && !backStackNavigator.back())
         finish()
     }{ _.onBackPressed() }
   }
 
   //TODO do we need to check internet connectivity here?
-  override def onBitmapSelected(imageAsset: ImageAsset, imageFromCamera: Boolean, cameraContext: CameraContext) =
+  override def onBitmapSelected(imageAsset: ImageAsset, cameraContext: CameraContext): Unit =
     if (cameraContext == CameraContext.SETTINGS) {
       inject[Signal[ZMessaging]].head.map { zms =>
         zms.users.updateSelfPicture(imageAsset)
       } (Threading.Background)
-      getSupportFragmentManager.popBackStack(CameraFragment.TAG, FragmentManager.POP_BACK_STACK_INCLUSIVE)
+      getSupportFragmentManager.popBackStack(CameraFragment.Tag, FragmentManager.POP_BACK_STACK_INCLUSIVE)
     }
 
   override def onCameraNotAvailable() =
     Toast.makeText(this, "Camera not available", Toast.LENGTH_SHORT).show()
 
   override def onOpenCamera(cameraContext: CameraContext) = {
-    Option(getSupportFragmentManager.findFragmentByTag(CameraFragment.TAG)) match {
+    Option(getSupportFragmentManager.findFragmentByTag(CameraFragment.Tag)) match {
       case None =>
         getSupportFragmentManager
           .beginTransaction
           .setTransition(FragmentTransaction.TRANSIT_FRAGMENT_FADE)
-          .add(R.id.fl__root__camera, CameraFragment.newInstance(cameraContext), CameraFragment.TAG)
-          .addToBackStack(CameraFragment.TAG)
+          .add(R.id.fl__root__camera, CameraFragment.newInstance(cameraContext), CameraFragment.Tag)
+          .addToBackStack(CameraFragment.Tag)
           .commit
       case Some(_) => //do nothing
     }
   }
 
   def onCloseCamera(cameraContext: CameraContext) =
-    getSupportFragmentManager.popBackStack(CameraFragment.TAG, FragmentManager.POP_BACK_STACK_INCLUSIVE)
+    getSupportFragmentManager.popBackStack(CameraFragment.Tag, FragmentManager.POP_BACK_STACK_INCLUSIVE)
 
 }
 

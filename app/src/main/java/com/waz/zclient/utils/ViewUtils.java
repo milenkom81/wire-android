@@ -124,8 +124,39 @@ public class ViewUtils {
         fadeInView(view, 1, new ValueAnimator().getDuration(), 0);
     }
 
-    public static void fadeInView(@Nullable final View view, long duration) {
+    public static void fadeOutView(@Nullable final View view) {
+        fadeOutView(view, true);
+    }
+
+    public static void fadeView(@Nullable final View view, boolean fadeIn) {
+        if (fadeIn) {
+            fadeInView(view);
+        } else {
+            fadeOutView(view);
+        }
+    }
+
+    public static void fadeInView(@Nullable final View view, final long duration) {
         fadeInView(view, 1, duration, 0);
+    }
+    public static void fadeOutView(@Nullable final View view, final long duration) {
+        fadeOutView(view, duration, 0);
+    }
+
+    public static void fadeView(@Nullable final View view, final long duration, boolean fadeIn) {
+        if (fadeIn) {
+            fadeInView(view, duration);
+        } else {
+            fadeOutView(view, duration);
+        }
+    }
+
+    public static void fadeOutView(@Nullable final View view, boolean setToGoneWithEndAction) {
+        fadeOutView(view, new ValueAnimator().getDuration(), 0, setToGoneWithEndAction);
+    }
+
+    public static void fadeOutView(@Nullable final View view, final long duration, final long startDelay) {
+        fadeOutView(view, duration, startDelay, true);
     }
 
     public static void fadeInView(@Nullable final View view, final float targetAlpha, final long duration, final long startDelay) {
@@ -143,22 +174,6 @@ public class ViewUtils {
                 }
             })
             .start();
-    }
-
-    public static void fadeOutView(@Nullable final View view) {
-        fadeOutView(view, true);
-    }
-
-    public static void fadeOutView(@Nullable final View view, boolean setToGoneWithEndAction) {
-        fadeOutView(view, new ValueAnimator().getDuration(), 0, setToGoneWithEndAction);
-    }
-
-    public static void fadeOutView(@Nullable final View view, final long duration) {
-        fadeOutView(view, duration, 0);
-    }
-
-    public static void fadeOutView(@Nullable final View view, final long duration, final long startDelay) {
-        fadeOutView(view, duration, startDelay, true);
     }
 
     public static void fadeOutView(@Nullable final View view, final long duration, final long startDelay, final boolean setToGoneWithEndAction) {

@@ -21,7 +21,7 @@ import com.waz.api.ImageAsset;
 import com.waz.zclient.pages.main.profile.camera.CameraContext;
 
 public interface CameraActionObserver {
-    void onBitmapSelected(ImageAsset imageAsset, boolean imageFromCamera, CameraContext cameraContext);
+    void onBitmapSelected(ImageAsset imageAsset, CameraContext cameraContext);
 
     void onCameraNotAvailable();
 

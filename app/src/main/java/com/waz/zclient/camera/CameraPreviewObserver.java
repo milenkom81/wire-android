@@ -18,7 +18,6 @@
 package com.waz.zclient.camera;
 
 import android.graphics.Rect;
-import com.waz.api.ImageAsset;
 
 import java.util.Set;
 
@@ -28,7 +27,7 @@ public interface CameraPreviewObserver {
 
     void onCameraLoadingFailed();
 
-    void onPictureTaken(ImageAsset imageAsset);
+    void onPictureTaken(byte[] imageData, boolean mirrored);
 
     void onFocusBegin(Rect focusArea);
 

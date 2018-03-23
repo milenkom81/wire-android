@@ -18,7 +18,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 -->
-<com.waz.zclient.pages.extendedcursor.image.ImagePreviewLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<com.waz.zclient.pages.main.ImagePreviewLayout xmlns:android="http://schemas.android.com/apk/res/android"
                                                                xmlns:app="http://schemas.android.com/apk/res-auto"
                                                                android:layout_width="match_parent"
                                                                android:layout_height="match_parent"
@@ -29,7 +29,7 @@
         android:id="@+id/iv__conversation__preview"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:scaleType="fitCenter"
+        android:scaleType="centerInside"
         />
 
     <FrameLayout
@@ -116,4 +116,4 @@
 
     </LinearLayout>
 
-</com.waz.zclient.pages.extendedcursor.image.ImagePreviewLayout>
+</com.waz.zclient.pages.main.ImagePreviewLayout>

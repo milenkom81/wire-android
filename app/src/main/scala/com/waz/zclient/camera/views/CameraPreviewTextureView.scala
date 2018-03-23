@@ -25,7 +25,6 @@ import android.provider.Settings
 import android.util.AttributeSet
 import android.view._
 import com.waz.ZLog
-import com.waz.api.ImageAssetFactory
 import com.waz.permissions.PermissionsService
 import com.waz.threading.CancellableFuture.CancelException
 import com.waz.threading.Threading
@@ -73,16 +72,11 @@ class CameraPreviewTextureView(val cxt: Context, val attrs: AttributeSet, val de
     soundController.playCameraShutterSound()
   }.onComplete {
     case Success(data) => observer.foreach {
-      _.onPictureTaken {
-        if (getCameraFacing == CameraFacing.FRONT) ImageAssetFactory.getMirroredImageAsset(data)
-        else ImageAssetFactory.getImageAsset(data)
-      }
+      _.onPictureTaken(data, controller.getCurrentCameraFacing.getOrElse(CameraFacing.BACK) == CameraFacing.FRONT)
     }
     case Failure(_) =>
       observer.foreach(_.onCameraLoadingFailed())
   } (Threading.Ui)
-
-  def getCameraFacing = controller.getCurrentCameraFacing.getOrElse(CameraFacing.BACK)
 
   def getNumberOfCameras = controller.camInfos.size
 
