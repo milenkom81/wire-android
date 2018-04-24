@@ -142,7 +142,7 @@ protected class AudioParticipantChatheadView(val context: Context, val attrs: At
     chatheadView.setUserId(userId)
   }
 
-  controller.glob.activeCallEstablished.zip(controller.participantIdsToDisplay).map {
+  controller.glob.isCallEstablished.zip(controller.participantIdsToDisplay).map {
     case (true, otherParticipants) if otherParticipants.size > 1 => VISIBLE
     case _ => View.GONE
   }.on(Threading.Ui)(nameView.setVisibility)

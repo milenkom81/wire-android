@@ -50,7 +50,7 @@ class CallingNotificationsController(implicit cxt: WireContext, eventContext: Ev
   val callCtrler = inject[GlobalCallingController]
   import callCtrler._
 
-  activeCall.on(Threading.Ui) {
+  isCallActive.on(Threading.Ui) {
     case (false) =>
       notificationManager.cancel(ZETA_CALL_ONGOING_NOTIFICATION_ID)
       notificationManager.cancel(ZETA_CALL_INCOMING_NOTIFICATION_ID)
@@ -75,7 +75,7 @@ class CallingNotificationsController(implicit cxt: WireContext, eventContext: Ev
     callerName <- callerData.map(_.name)
     state      <- callState
     group      <- groupCall
-    video      <- videoCall
+    video      <- isVideoCall
     bmp        <- bitmap
   } yield (z.selfUserId, conv, callerName, state, group, video, bmp)).on(Threading.Ui) {
     case (account, conv, callerName, state, group, video, bmp) =>

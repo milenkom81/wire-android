@@ -90,7 +90,7 @@ class CurrentCallController(implicit inj: Injector, cxt: WireContext, ec: EventC
   val subtitleText: Signal[String] = convDegraded.flatMap {
     case true => Signal("")
     case false => (for {
-      video <- videoCall
+      video <- isVideoCall
       state <- callState
       dur <- duration map { duration =>
         val seconds = ((duration.toMillis / 1000) % 60).toInt
@@ -185,7 +185,7 @@ class CurrentCallController(implicit inj: Injector, cxt: WireContext, ec: EventC
   }
 
   def toggleMuted(): Unit =
-    callingServiceAndCurrentConvId.currentValue.foreach(_._1.setCallMuted(!muted.currentValue.getOrElse(false)))
+    callingServiceAndCurrentConvId.currentValue.foreach(_._1.setCallMuted(!isMuted.currentValue.getOrElse(false)))
 
   def toggleVideo(): Unit = {
     val state = videoSendState.currentValue.getOrElse(DONT_SEND)
@@ -204,7 +204,7 @@ class CurrentCallController(implicit inj: Injector, cxt: WireContext, ec: EventC
 
   val leftButtonSettings = convDegraded.flatMap {
     case true =>
-      outgoingCall.map { outgoing =>
+      isCallOutgoing.map { outgoing =>
         ButtonSettings(R.string.glyph__close, R.string.confirmation_menu__cancel, () => if (outgoing) leaveCall() else dismissCall())
       }
     case false => Signal(ButtonSettings(R.string.glyph__microphone_off, R.string.incoming__controls__ongoing__mute, () => toggleMuted()))
@@ -212,14 +212,14 @@ class CurrentCallController(implicit inj: Injector, cxt: WireContext, ec: EventC
 
   val middleButtonSettings = convDegraded.flatMap {
     case true  =>
-      outgoingCall.map { outgoing =>
+      isCallOutgoing.map { outgoing =>
         val text = if (outgoing) R.string.conversation__action__call else R.string.incoming__controls__incoming__accept
         ButtonSettings(R.string.glyph__call, text, () => continueDegradedCall(), ButtonColor.Green)
       }
     case false => Signal(ButtonSettings(R.string.glyph__end_call, R.string.incoming__controls__ongoing__hangup, () => leaveCall(), ButtonColor.Red))
   }
 
-  val rightButtonSettings = videoCall.map {
+  val rightButtonSettings = isVideoCall.map {
     case true  => ButtonSettings(R.string.glyph__video,        R.string.incoming__controls__ongoing__video,   () => toggleVideo())
     case false => ButtonSettings(R.string.glyph__speaker_loud, R.string.incoming__controls__ongoing__speaker, () => speakerButton.press())
   }
@@ -228,7 +228,7 @@ class CurrentCallController(implicit inj: Injector, cxt: WireContext, ec: EventC
 
   val rightButtonShown = convDegraded.flatMap {
     case true  => Signal(false)
-    case false => Signal(videoCall, activeCallEstablished, captureDevices, isTablet) map {
+    case false => Signal(isVideoCall, isCallEstablished, captureDevices, isTablet) map {
       case (true, false, _, _) => false
       case (true, true, captureDevices, _) => captureDevices.size >= 0
       case (false, _, _, isTablet) => !isTablet //Tablets don't have ear-pieces, so you can't switch between speakers

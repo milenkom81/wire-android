@@ -17,28 +17,153 @@
  */
 package com.waz.zclient.calling.controllers
 
+import android.Manifest.permission.{CAMERA, RECORD_AUDIO}
+import android.content.{Context, DialogInterface, Intent}
+import android.net.Uri
 import android.os.PowerManager
+import android.provider.Settings
+import android.support.v7.app.AlertDialog
 import com.waz.ZLog.ImplicitTag._
 import com.waz.ZLog._
-import com.waz.api.{IConversation, Verification}
+import com.waz.api.{IConversation, NetworkMode, Verification}
+import com.waz.content.GlobalPreferences.AutoAnswerCallPrefKey
 import com.waz.model.ConversationData.ConversationType
-import com.waz.model.UserId
-import com.waz.service.ZMessaging
+import com.waz.model.{ConvId, ConversationData, UserId}
+import com.waz.permissions.PermissionsService
 import com.waz.service.call.CallInfo
-import com.waz.service.call.CallInfo.CallState
 import com.waz.service.call.CallInfo.CallState._
+import com.waz.service.{AccountsService, GlobalModule, NetworkModeService, ZMessaging}
 import com.waz.threading.Threading
 import com.waz.utils.events.{EventContext, Signal}
+import com.waz.utils.returning
 import com.waz.zclient.calling.CallingActivity
 import com.waz.zclient.common.controllers.SoundController
+import com.waz.zclient.conversation.ConversationController
 import com.waz.zclient.utils.ContextUtils._
-import com.waz.zclient.utils.DeprecationUtils
+import com.waz.zclient.utils.PhoneUtils.PhoneState
+import com.waz.zclient.utils.{DeprecationUtils, PhoneUtils, ViewUtils}
 import com.waz.zclient.{Injectable, Injector, R, WireContext}
+
+import scala.concurrent.{Future, Promise}
+import scala.util.Success
+import scala.util.control.NonFatal
 
 class GlobalCallingController(implicit inj: Injector, cxt: WireContext, eventContext: EventContext) extends Injectable {
 
-  private val screenManager = new ScreenManager
-  private val soundController = inject[SoundController]
+  import Threading.Implicits.Ui
+
+  val screenManager          = new ScreenManager
+  val soundController        = inject[SoundController]
+  val conversationController = inject[ConversationController]
+  val networkMode            = inject[NetworkModeService].networkMode
+  val permissions            = inject[PermissionsService]
+  val accounts               = inject[AccountsService]
+
+  //The zms of the account that's currently active (if any)
+  val activeZmsOpt = inject[Signal[Option[ZMessaging]]]
+
+  //the zms of the account that currently has an active call (if any)
+  val callingZms = {
+    for {
+      acc <- inject[GlobalModule].calling.activeAccount
+      zms <- acc.fold(Signal.const(Option.empty[ZMessaging]))(id => Signal.future(ZMessaging.currentAccounts.getZms(id)))
+    } yield zms
+  }
+
+  val currentCallOpt: Signal[Option[CallInfo]] = callingZms.flatMap {
+    case Some(z) => z.calling.currentCall
+    case _ => Signal.const(None)
+  }
+
+  val callConvIdOpt     = currentCallOpt.map(_.map(_.convId))
+  val isCallActive      = currentCallOpt.map(_.isDefined)
+  val callStateOpt      = currentCallOpt.map(_.flatMap(_.state))
+  val isCallEstablished = callStateOpt.map(_.contains(SelfConnected))
+  val isCallOutgoing    = callStateOpt.map(_.contains(SelfCalling))
+  val isCallIncoming    = callStateOpt.map(_.contains(OtherCalling))
+
+  val isMuted           = currentCallOpt.map(_.exists(_.muted)).disableAutowiring()
+  val isVideoCall       = currentCallOpt.map(_.exists(_.isVideoCall)).disableAutowiring()
+
+  def startCall(account: UserId, conv: ConvId, withVideo: Boolean): Future[Unit] =
+    if (PhoneUtils.getPhoneState(cxt) != PhoneState.IDLE) showErrorDialog(R.string.calling__cannot_start__title, R.string.calling__cannot_start__message)
+    else {
+      for {
+        curCallZms  <- callingZms.head
+        curCallConv <- callConvIdOpt.head
+        //End any ongoing calls - if there is a current call, the convId must be defined
+        _ <- curCallZms.fold(Future.successful({}))(_.calling.endCall(curCallConv.get))
+        Some(newCallZms)  <- accounts.getZms(account)
+        Some(newCallConv) <- newCallZms.convsStorage.get(conv)
+        _ <- networkMode.head.map {
+          case NetworkMode.OFFLINE           => showErrorDialog(R.string.alert_dialog__no_network__header, R.string.calling__call_drop__message)
+          case NetworkMode._2G               => showErrorDialog(R.string.calling__slow_connection__title, R.string.calling__slow_connection__message)
+          case NetworkMode.EDGE if withVideo => showErrorDialog(R.string.calling__slow_connection__title, R.string.calling__video_call__slow_connection__message).flatMap(_ => startCall(newCallConv, withVideo = true))
+          case _                             => startCall(newCallConv, withVideo)
+        }
+      } yield {}
+    }.recover {
+      case NonFatal(e) =>
+        error("Failed to start call", e)
+    }
+
+  private def startCall(c: ConversationData, withVideo: Boolean = false): Future[Unit] = {
+    def call() = {
+      currentCallOpt.head.map { incomingCall =>
+        permissions.requestAllPermissions(if (incomingCall.map(_.isVideoCall).getOrElse(withVideo)) Set(CAMERA, RECORD_AUDIO) else Set(RECORD_AUDIO)).map {
+          case true => callingService.head.map(_.startCall(c.id, withVideo))
+          case false =>
+            ViewUtils.showAlertDialog(
+              cxt,
+              R.string.calling__cannot_start__title,
+              if (withVideo) R.string.calling__cannot_start__no_video_permission__message else R.string.calling__cannot_start__no_permission__message,
+              R.string.permissions_denied_dialog_acknowledge,
+              R.string.permissions_denied_dialog_settings,
+              new DialogInterface.OnClickListener() {
+                override def onClick(dialog: DialogInterface, which: Int): Unit =
+                  if (incomingCall.isDefined) callingService.head.map(_.endCall(c.id))
+              },
+              new DialogInterface.OnClickListener() {
+                override def onClick(dialog: DialogInterface, which: Int): Unit = {
+                  returning(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", cxt.getPackageName, null))) { i =>
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    cxt.startActivity(i)
+                  }
+                  if (incomingCall.isDefined) callingService.head.map(_.endCall(c.id))
+                }
+              })
+        } (Threading.Ui)
+      }
+    }
+
+    if (c.convType == ConversationData.ConversationType.Group) conversationController.loadMembers(c.id).foreach { members =>
+      if (members.size > 5)
+        ViewUtils.showAlertDialog(
+          cxt,
+          getString(R.string.group_calling_title),
+          getString(R.string.group_calling_message, Integer.valueOf(members.size)),
+          getString(R.string.group_calling_confirm),
+          getString(R.string.group_calling_cancel),
+          new DialogInterface.OnClickListener() {
+            def onClick(dialog: DialogInterface, which: Int) = call()
+          }, null
+        ) else call()
+    }(Threading.Ui)
+    else call()
+  }
+
+  for {
+    cId <- convId
+    incomingCall <- callState.map {
+      case OtherCalling => true
+      case _ => false
+    }
+    autoAnswer <- prefs.flatMap(_.preference(AutoAnswerCallPrefKey).signal)
+  } if (incomingCall && autoAnswer) startCall(cId)
+
+
+
+
 
   /**
     * Opt Signals - these signals should be used where empty states (i.e, Nones) are important to the devices state. For example
@@ -53,59 +178,6 @@ class GlobalCallingController(implicit inj: Injector, cxt: WireContext, eventCon
     */
 
   //The ZMessaging of the active call, or the currently active account if there is no active call, or none if no accounts are logged in.
-  val zmsOpt = {
-    for {
-      acc <- ZMessaging.currentGlobal.calling.activeAccount
-      zms <- acc.fold(inject[Signal[Option[ZMessaging]]])(id => Signal.future(ZMessaging.currentAccounts.getZms(id)))
-    } yield zms
-  }
-
-  val currentCallOpt: Signal[Option[CallInfo]] = zmsOpt.flatMap {
-    case Some(z) => z.calling.currentCall
-    case _ => Signal.const(None)
-  }
-
-  val convIdOpt = currentCallOpt.map(_.map(_.convId))
-
-  val callStateOpt: Signal[Option[CallState]] = currentCallOpt.map(_.flatMap(_.state))
-
-  val activeCall = currentCallOpt.map(_.isDefined)
-
-  val activeCallEstablished = zmsOpt.flatMap {
-    case Some(z) => callStateOpt.map {
-      case Some(SelfConnected) => true
-      case _ => false
-    }
-    case _ => Signal.const(false)
-  }
-
-  val callEnded = zmsOpt.flatMap {
-    case Some(z) => callStateOpt.map {
-      case None => true
-      case _ => false
-    }
-    case _ => Signal.const(true)
-  }
-
-  val outgoingCall = callStateOpt.map {
-    case Some(st) if st == SelfCalling => true
-    case _ => false
-  }
-
-  val incomingCall = callStateOpt.map {
-    case Some(st) if st == OtherCalling => true
-    case _ => false
-  }
-
-  val muted = currentCallOpt.map {
-    case Some(c) => c.muted
-    case _ => false
-  }.disableAutowiring()
-
-  val videoCall = currentCallOpt.map {
-    case Some(c) => c.isVideoCall
-    case _ => false
-  }.disableAutowiring()
 
   /**
     * ...And from here on is where only their proper value is important.
@@ -115,7 +187,7 @@ class GlobalCallingController(implicit inj: Injector, cxt: WireContext, eventCon
 
   def wasUiActiveOnCallStart = _wasUiActiveOnCallStart
 
-  val onCallStarted = activeCall.onChanged.filter(_ == true).map { _ =>
+  val onCallStarted = isCallActive.onChanged.filter(_ == true).map { _ =>
     val active = ZMessaging.currentGlobal.lifecycle.uiActive.currentValue.getOrElse(false)
     _wasUiActiveOnCallStart = active
     active
@@ -125,20 +197,20 @@ class GlobalCallingController(implicit inj: Injector, cxt: WireContext, eventCon
     CallingActivity.start(cxt)
   }(EventContext.Global)
 
-  activeCallEstablished.onChanged.filter(_ == true) { _ =>
+  isCallEstablished.onChanged.filter(_ == true) { _ =>
     soundController.playCallEstablishedSound()
   }
 
-  callEnded.onChanged.filter(_ == true) { _ =>
+  isCallActive.onChanged.filter(_ == false) { _ =>
     soundController.playCallEndedSound()
   }
 
-  activeCall.onChanged.filter(_ == false).on(Threading.Ui) { _ =>
+  isCallActive.onChanged.filter(_ == false).on(Threading.Ui) { _ =>
     screenManager.releaseWakeLock()
   }(EventContext.Global)
 
   (for {
-    v <- videoCall
+    v <- isVideoCall
     st <- callStateOpt
   } yield (v, st)) {
     case (true, _) => screenManager.setStayAwake()
@@ -148,8 +220,8 @@ class GlobalCallingController(implicit inj: Injector, cxt: WireContext, eventCon
   }
 
   (for {
-    m <- muted
-    i <- incomingCall
+    m <- isMuted
+    i <- isCallIncoming
   } yield (m, i)) { case (m, i) =>
     soundController.setIncomingRingTonePlaying(!m && i)
   }
@@ -161,7 +233,7 @@ class GlobalCallingController(implicit inj: Injector, cxt: WireContext, eventCon
     * Most of the stuff here is just because it saves re-defining the signals in one of the sub-CallControllers
     */
 
-  val zms = zmsOpt.collect { case Some(z) => z }
+  val zms = callingZms.collect { case Some(z) => z }
 
   val currentCall = currentCallOpt.collect { case Some(c) => c }
 
@@ -170,7 +242,7 @@ class GlobalCallingController(implicit inj: Injector, cxt: WireContext, eventCon
 
   val callingService = zms.map(_.calling).disableAutowiring()
 
-  val convId = convIdOpt.collect { case Some(c) => c }
+  val convId = callConvIdOpt.collect { case Some(c) => c }
 
   val callingServiceAndCurrentConvId = (for {
     svc <- callingService
@@ -209,15 +281,15 @@ class GlobalCallingController(implicit inj: Injector, cxt: WireContext, eventCon
 
   val degradationConfirmationText = convDegraded.flatMap {
     case false => Signal("")
-    case true => outgoingCall.map {
+    case true => isCallOutgoing.map {
       case true  => R.string.conversation__degraded_confirmation__place_call
       case false => R.string.conversation__degraded_confirmation__accept_call
     }.map(getString)
   }
 
   (for {
-    v <- videoCall
-    o <- outgoingCall
+    v <- isVideoCall
+    o <- isCallOutgoing
     d <- convDegraded
   } yield (v, o & !d)) { case (v, play) =>
     soundController.setOutgoingRingTonePlaying(play, v)
@@ -226,7 +298,7 @@ class GlobalCallingController(implicit inj: Injector, cxt: WireContext, eventCon
   //Use Audio view to show conversation degraded screen for calling
   val showVideoView = convDegraded.flatMap {
     case true  => Signal(false)
-    case false => videoCall
+    case false => isVideoCall
   }.disableAutowiring()
 
   val selfUser = zms flatMap (_.users.selfUser)
@@ -244,6 +316,34 @@ class GlobalCallingController(implicit inj: Injector, cxt: WireContext, eventCon
   val callerData = userStorage.zip(callerId).flatMap { case (storage, id) => storage.signal(id) }
 
   val groupCall = conversation.map(_.convType == ConversationType.Group)
+
+}
+
+object GlobalCallingController {
+
+  def showOfflineDialog(implicit cxt: Context): Future[Unit] = {
+    ViewUtils.showAlertDialog(
+      cxt,
+      R.string.alert_dialog__no_network__header,
+      R.string.calling__call_drop__message,
+      R.string.alert_dialog__confirmation,
+      null, false)
+
+    val p = Promise[Unit]()
+    val dialog = new AlertDialog.Builder(context)
+      .setCancelable(false)
+      .setTitle(R.string.alert_dialog__no_network__header)
+      .setMessage(msgRes)
+      .setNeutralButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+        def onClick(dialog: DialogInterface, which: Int): Unit = {
+          dialog.dismiss()
+          p.complete(Success({}))
+        }
+      }).create
+    dialog.show()
+    p.future
+
+  }
 
 }
 

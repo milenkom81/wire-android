@@ -45,7 +45,7 @@ class CallingActivity extends BaseActivity {
     verbose("Creating CallingActivity")
     getWindow.setBackgroundDrawableResource(R.color.calling_background)
 
-    activeCall.on(Threading.Ui) {
+    isCallActive.on(Threading.Ui) {
       case false =>
         verbose("call no longer exists, finishing activity")
         finish()
@@ -57,7 +57,7 @@ class CallingActivity extends BaseActivity {
     //ensure activity gets killed to allow content to change if the conv degrades (no need to kill activity on audio call)
     (for {
       degraded <- convDegraded
-      video    <- videoCall
+      video    <- isVideoCall
     } yield degraded && video).onChanged.filter(_ == true).on(Threading.Ui)(_ => finish())
 
     //can only set content view once - so do so on first value of `showVideoView`
@@ -108,7 +108,7 @@ object CallingActivity extends Injectable {
 
   def startIfCallIsActive(context: WireContext) = {
     import context.injector
-    inject[GlobalCallingController].activeCall.head.foreach {
+    inject[GlobalCallingController].isCallActive.head.foreach {
       case true => start(context)
       case false =>
     } (Threading.Ui)

@@ -100,9 +100,9 @@ private[calling] class OutgoingControlsView(val context: Context, val attrs: Att
     rightButton.setVisible(v)
   }
 
-  muted.on(Threading.Ui)(leftButton.setButtonPressed)
+  isMuted.on(Threading.Ui)(leftButton.setButtonPressed)
 
-  Signal(videoCall, speakerButton, videoSendState).map {
+  Signal(isVideoCall, speakerButton, videoSendState).map {
     case (true, _, videoSendState) => videoSendState == SEND
     case (false, speakerEnabled, _) => speakerEnabled
   }.on(Threading.Ui)(rightButton.setButtonPressed)
@@ -192,7 +192,7 @@ private class IncomingControlsView(val context: Context, val attrs: AttributeSet
 
   setBackgroundColor(Color.TRANSPARENT)
 
-  val rightButtonGlyphSignal = callController.glob.videoCall map {
+  val rightButtonGlyphSignal = callController.glob.isVideoCall map {
     case true => getResources.getString(R.string.glyph__video)
     case false => getResources.getString(R.string.glyph__call)
   }
